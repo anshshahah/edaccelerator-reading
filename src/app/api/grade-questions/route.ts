@@ -5,6 +5,7 @@ import { openai } from "@/lib/ai/openai";
 import { zodTextFormat } from "openai/helpers/zod";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 const QuestionCommonSchema = z.object({
   id: z.string().min(1),
@@ -218,13 +219,15 @@ export async function POST(req: Request) {
   } catch (err: any) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(
-        { error: "Invalid request payload for grading.", issues: err.issues },
+        { error: "Invalid request body", issues: err.issues },
         { status: 400 }
       );
     }
-    return NextResponse.json(
-      { error: err?.message ?? "Unexpected grading error." },
-      { status: 500 }
-    );
+
+    const message = err?.message ?? "Unknown error";
+    const status = typeof err?.status === "number" ? err.status : 500;
+    const code = err?.code ?? err?.error?.code;
+
+    return NextResponse.json({ error: message, code }, { status });
   }
 }

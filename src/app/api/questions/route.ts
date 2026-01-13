@@ -5,6 +5,8 @@ import type { QuestionSet } from "@/lib/types";
 import { generateQuestionsAI } from "@/lib/ai/questionGeneration";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
+
 
 const BodySchema = z.object({
   passageId: z.string().min(1),
@@ -49,9 +51,17 @@ export async function POST(req: Request) {
 
     return NextResponse.json(set);
   } catch (err: any) {
-    const status = typeof err?.status === "number" ? err.status : 502;
-    const message = err?.message ?? "AI question generation failed.";
+    if (err instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: "Invalid request body", issues: err.issues },
+        { status: 400 }
+      );
+    }
+
+    const message = err?.message ?? "Unknown error";
+    const status = typeof err?.status === "number" ? err.status : 500;
     const code = err?.code ?? err?.error?.code;
+
     return NextResponse.json({ error: message, code }, { status });
   }
 }

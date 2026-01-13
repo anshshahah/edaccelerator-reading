@@ -6,6 +6,7 @@ import { getChunkedPassage, setChunkedPassage } from "@/lib/ai/chunkCache";
 import { createHash } from "crypto";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 const BodySchema = z.object({
   passageId: z.string().min(1),
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
     }
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
-        { error: "OPENAI_API_KEY missing. Add it to .env.local and restart dev server." },
+        { error: "OPENAI_API_KEY missing. Add it in Vercel env vars." },
         { status: 500 }
       );
     }
@@ -42,6 +43,13 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ...result, cached: false });
   } catch (err: any) {
+    if (err instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: "Invalid request body", issues: err.issues },
+        { status: 400 }
+      );
+    }
+
     const message = err?.message ?? "Unknown error";
     const status = typeof err?.status === "number" ? err.status : 500;
     const code = err?.code ?? err?.error?.code;
