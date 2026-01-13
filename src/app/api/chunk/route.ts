@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { passages } from "@/data/passages";
-import { generateThematicChunkPlan } from "@/lib/ai/thematicChunking";
-import { getCachedPlan, setCachedPlan } from "@/lib/ai/chunkCache";
+import { chunkPassageIntoParagraphsAI } from "@/lib/ai/thematicChunking";
+import { getChunkedPassage, setChunkedPassage } from "@/lib/ai/chunkCache";
+import { createHash } from "crypto";
 
 export const runtime = "nodejs";
 
 const BodySchema = z.object({
   passageId: z.string().min(1),
 });
+
+function hashText(text: string) {
+  return createHash("sha256").update(text).digest("hex").slice(0, 16);
+}
 
 export async function POST(req: Request) {
   try {
@@ -18,29 +23,29 @@ export async function POST(req: Request) {
     if (!passage) {
       return NextResponse.json({ error: "Passage not found" }, { status: 404 });
     }
-
-    const cacheKey = `chunkplan:${body.passageId}:min1max3`;
-    const cached = getCachedPlan(cacheKey);
-    if (cached) {
-      return NextResponse.json({ plan: cached, cached: true });
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { error: "OPENAI_API_KEY missing. Add it to .env.local and restart dev server." },
+        { status: 500 }
+      );
     }
 
-    const plan = await generateThematicChunkPlan(passage.paragraphs, {
-      minParasPerChunk: 1,
-      maxParasPerChunk: 3,
-    });
+    const cacheKey = `${passage.id}:${hashText(passage.text)}`;
 
-    setCachedPlan(cacheKey, plan);
+    const cached = getChunkedPassage(cacheKey);
+    if (cached) {
+      return NextResponse.json({ ...cached, cached: true });
+    }
 
-    return NextResponse.json({ plan, cached: false });
+    const result = await chunkPassageIntoParagraphsAI(passage.text);
+    setChunkedPassage(cacheKey, result);
+
+    return NextResponse.json({ ...result, cached: false });
   } catch (err: any) {
     const message = err?.message ?? "Unknown error";
-    const status = err?.status ?? 500;
-    const code = err?.code ?? undefined;
+    const status = typeof err?.status === "number" ? err.status : 500;
+    const code = err?.code ?? err?.error?.code;
 
-    return NextResponse.json(
-      { error: message, code },
-      { status: typeof status === "number" ? status : 500 }
-    );
+    return NextResponse.json({ error: message, code }, { status });
   }
 }

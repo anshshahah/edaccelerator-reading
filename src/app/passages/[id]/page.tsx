@@ -1,6 +1,7 @@
+import Link from "next/link";
 import { passages } from "@/data/passages";
 import { notFound } from "next/navigation";
-import PassageChunker from "@/components/reader/PassageChunker";
+import PassageWorkspace from "@/components/passage/PassageWorkspace";
 
 export const runtime = "nodejs";
 
@@ -22,22 +23,15 @@ export default async function PassagePage({
 
   return (
     <main className="mx-auto max-w-5xl p-6">
-      <h1 className="text-2xl font-semibold">{passage.title}</h1>
+      <Link
+        href="/"
+        className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs hover:bg-neutral-900/20"
+      >
+        ← Back
+      </Link>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <PassageChunker
-          passageId={passage.id}
-          title={passage.title}
-          paragraphs={passage.paragraphs}
-        />
-
-        <section className="rounded-xl border p-4">
-          <h2 className="font-medium">Questions</h2>
-          <p className="mt-2 text-sm text-neutral-600">
-            AI generated questions placeholder.
-          </p>
-        </section>
-      </div>
+      <h1 className="mt-4 text-2xl font-semibold">{passage.title}</h1>
+      <PassageWorkspace passage={passage} />
     </main>
   );
 }

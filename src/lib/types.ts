@@ -1,16 +1,13 @@
-export type Chunk = {
-  id: string;
-  label: string;
-  start: number;
-  end: number;
-  text: string;
-};
-
 
 export type PassageData = {
   id: string;
   title: string;
-  paragraphs: string[];
+  text: string;
+};
+
+export type ParagraphWithIdea = {
+  text: string;
+  idea: string;
 };
 
 export type ThematicChunk = {
@@ -24,6 +21,11 @@ export type ThematicChunkPlan = {
   chunks: ThematicChunk[];
 };
 
+export type ChunkedPassageResult = {
+  paragraphs: ParagraphWithIdea[];
+  sections: ThematicChunkPlan;
+};
+
 export type QuestionType =
   | "inference"
   | "main_idea"
@@ -32,33 +34,60 @@ export type QuestionType =
   | "sequence"
   | "why/how";
 
-export type Question = {
+export type QuestionCommon = {
   id: string;
   type: QuestionType;
   difficulty: 1 | 2 | 3;
   prompt: string;
-  expectedAnswer: string;
-  rubric: string[];
-  evidenceChunkIds: string[];
   explanation: string;
+  evidenceParagraphs: number[];
 };
 
-export type GradeResult = {
+export type MCQQuestion = QuestionCommon & {
+  format: "mcq";
+  options: [string, string, string, string];
+  correctOptionIndex: 0 | 1 | 2 | 3;
+};
+
+export type ShortAnswerQuestion = QuestionCommon & {
+  format: "short";
+  modelAnswer: string;
+  rubric: string[];
+};
+
+export type Question = MCQQuestion | ShortAnswerQuestion;
+
+export type QuestionSet = {
+  setId: string;
+  passageId: string;
+  createdAt: number;
+  source: "ai";
+  questions: Question[];
+};
+
+export type AnswerInput =
+  | { questionId: string; format: "mcq"; answerIndex: number | null }
+  | { questionId: string; format: "short"; answerText: string };
+
+export type GradeItem = {
+  questionId: string;
   isCorrect: boolean;
   score01: number;
   feedback: string;
-  evidenceChunkIds: string[];
+  correctAnswer: string;
+  modelAnswer: string;
+  evidenceParagraphs: number[];
+  explanation: string;
 };
 
-export type AttemptResponse = {
-  questionId: string;
-  userAnswer: string;
-  grade: GradeResult;
+export type GradeSummary = {
+  correct: number;
+  total: number;
+  percent: number;
 };
 
-export type Attempt = {
-  attemptId: string;
-  passageId: string;
-  startedAt: number;
-  responses: AttemptResponse[];
+export type GradeReport = {
+  setId: string;
+  summary: GradeSummary;
+  results: GradeItem[];
 };

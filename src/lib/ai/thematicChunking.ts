@@ -1,96 +1,104 @@
 import { z } from "zod";
 import { zodTextFormat } from "openai/helpers/zod";
 import { openai } from "./openai";
-import type { ThematicChunkPlan } from "@/lib/types";
+import type { ChunkedPassageResult, ThematicChunkPlan } from "@/lib/types";
 
-const ChunkPlanSchema = z.object({
-  chunks: z.array(
-    z.object({
-      id: z.string().min(1),
-      label: z.string().min(1).max(80),
-      startPara: z.number().int().nonnegative(),
-      endPara: z.number().int().nonnegative(),
-    })
-  ).min(1),
-});
+const Schema = z
+  .object({
+    paragraphs: z
+      .array(
+        z
+          .object({
+            text: z.string().min(1),
+            idea: z.string().min(3).max(80),
+          })
+          .strict()
+      )
+      .min(2),
+    sections: z
+      .object({
+        chunks: z
+          .array(
+            z
+              .object({
+                id: z.string().min(1),
+                label: z.string().min(3).max(80),
+                startPara: z.number().int().nonnegative(),
+                endPara: z.number().int().nonnegative(),
+              })
+              .strict()
+          )
+          .min(1),
+      })
+      .strict(),
+  })
+  .strict();
 
-function validateAndNormalizePlan(
-  plan: ThematicChunkPlan,
-  paraCount: number,
-  minParasPerChunk: number,
-  maxParasPerChunk: number
-): ThematicChunkPlan {
+function validateSections(plan: ThematicChunkPlan, paraCount: number): ThematicChunkPlan {
   const sorted = [...plan.chunks].sort((a, b) => a.startPara - b.startPara);
 
-  if (sorted[0].startPara !== 0) throw new Error("Chunk plan must start at paragraph 0.");
-  if (sorted[sorted.length - 1].endPara !== paraCount - 1)
-    throw new Error("Chunk plan must end at the last paragraph.");
+  if (sorted[0].startPara !== 0) throw new Error("Sections must start at paragraph 0.");
+  if (sorted[sorted.length - 1].endPara !== paraCount - 1) {
+    throw new Error("Sections must end at the last paragraph.");
+  }
 
   for (let i = 0; i < sorted.length; i++) {
     const c = sorted[i];
-    if (c.startPara > c.endPara) throw new Error("Chunk has startPara > endPara.");
-    if (c.startPara < 0 || c.endPara >= paraCount) throw new Error("Chunk out of bounds.");
-
-    const size = c.endPara - c.startPara + 1;
-    if (size < minParasPerChunk || size > maxParasPerChunk) {
-      throw new Error(`Chunk size ${size} not in [${minParasPerChunk}, ${maxParasPerChunk}].`);
-    }
-
+    if (c.startPara > c.endPara) throw new Error("Section has startPara > endPara.");
+    if (c.endPara >= paraCount) throw new Error("Section out of bounds.");
     if (i > 0) {
       const prev = sorted[i - 1];
       if (c.startPara !== prev.endPara + 1) {
-        throw new Error("Chunks must be contiguous with no gaps/overlaps.");
+        throw new Error("Sections must be contiguous with no gaps/overlaps.");
       }
     }
   }
 
-  // normalize ids
   return {
     chunks: sorted.map((c, idx) => ({ ...c, id: `c${idx + 1}` })),
   };
 }
 
-export async function generateThematicChunkPlan(
-  paragraphs: string[],
-  opts?: { minParasPerChunk?: number; maxParasPerChunk?: number }
-): Promise<ThematicChunkPlan> {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error("Missing OPENAI_API_KEY (needed for AI chunking).");
-  }
+export async function chunkPassageIntoParagraphsAI(passageText: string): Promise<ChunkedPassageResult> {
+  if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY.");
 
-  const minParasPerChunk = opts?.minParasPerChunk ?? 1;
-  const maxParasPerChunk = opts?.maxParasPerChunk ?? 3;
-
-  const numbered = paragraphs.map((p, i) => `[${i}] ${p}`).join("\n\n");
   const model = process.env.OPENAI_CHUNK_MODEL || "gpt-4o-mini";
 
   const response = await openai.responses.parse({
     model,
+    temperature: 0.5,
     input: [
       {
         role: "system",
         content: [
-          "You are an expert reading tutor.",
-          "Chunk the passage into thematic sections that improve comprehension.",
-          "Return ONLY the JSON object matching the schema.",
+          "You are a reading tutor.",
+          "Split the passage into clear paragraphs and label the main idea of each paragraph.",
+          "Also group consecutive paragraphs into 2–4 thematic sections.",
+          "Return ONLY JSON matching the schema.",
           "",
           "Rules:",
-          `- Use between ${minParasPerChunk} and ${maxParasPerChunk} paragraphs per chunk.`,
-          "- Chunks MUST be contiguous and cover every paragraph exactly once.",
-          "- Do not skip or reorder paragraphs.",
-          "- Labels should be short and descriptive (3–6 words).",
+          "- Preserve meaning and order.",
+          "- Each paragraph's idea should be short (3–6 words).",
+          "- Section labels should be short (3–6 words).",
+          "- Sections must cover all paragraphs exactly once and be contiguous.",
         ].join("\n"),
       },
-      {
-        role: "user",
-        content: ["Chunk these paragraphs by theme:", "", numbered].join("\n"),
-      },
+      { role: "user", content: passageText },
     ],
-    text: { format: zodTextFormat(ChunkPlanSchema, "chunk_plan") },
+    text: { format: zodTextFormat(Schema, "chunked_passage") },
   });
 
-  const plan = response.output_parsed as ThematicChunkPlan | undefined;
-  if (!plan) throw new Error("No parsed chunk plan returned.");
+  const parsed = response.output_parsed as z.infer<typeof Schema> | undefined;
+  if (!parsed) throw new Error("No parsed chunking result returned.");
 
-  return validateAndNormalizePlan(plan, paragraphs.length, minParasPerChunk, maxParasPerChunk);
+  const paraCount = parsed.paragraphs.length;
+  const sections = validateSections(parsed.sections, paraCount);
+
+  return {
+    paragraphs: parsed.paragraphs.map((p) => ({
+      text: p.text.trim(),
+      idea: p.idea.trim(),
+    })),
+    sections,
+  };
 }
