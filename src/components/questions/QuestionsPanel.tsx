@@ -34,8 +34,14 @@ export default function QuestionsPanel({
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<GradeReport | null>(null);
 
+  const [openHints, setOpenHints] = useState<Record<string, boolean>>({});
+
   const questions: Question[] = set?.questions ?? [];
   const canGenerate = !set || !!report;
+
+  function toggleHint(questionId: string) {
+    setOpenHints((prev) => ({ ...prev, [questionId]: !prev[questionId] }));
+  }
 
   const resultMap = useMemo(() => {
     if (!report) return new Map<string, GradeReport["results"][number]>();
@@ -61,6 +67,7 @@ export default function QuestionsPanel({
     setError(null);
     setReport(null);
     setAnswers({});
+    setOpenHints({});
 
     try {
       const paras = paragraphs ?? (await ensureChunked());
@@ -135,7 +142,16 @@ export default function QuestionsPanel({
 
       if (!res.ok) throw new Error(data?.error ?? "Failed to grade.");
 
-      setReport(data as GradeReport);
+      const nextReport = data as GradeReport;
+      setReport(nextReport);
+
+      setOpenHints((prev) => {
+        const next = { ...prev };
+        for (const r of nextReport.results) {
+          if (!r.isCorrect) next[r.questionId] = true;
+        }
+        return next;
+      });
     } catch (e: any) {
       setError(e?.message ?? "Failed to grade.");
     } finally {
@@ -251,6 +267,15 @@ export default function QuestionsPanel({
                   <span className="rounded-full border px-2 py-1 text-[11px] text-neutral-500">
                     {q.format.toUpperCase()}
                   </span>
+
+                  <button
+                    type="button"
+                    onClick={() => toggleHint(q.id)}
+                    className="rounded-lg border px-2 py-1 text-[11px] text-neutral-300 hover:bg-neutral-900/20"
+                  >
+                    {openHints[q.id] ? "Hide hint" : "Hint"}
+                  </button>
+
                   {isGraded && (
                     <span
                       className={`rounded-full border px-2 py-1 text-[11px] ${
@@ -366,7 +391,7 @@ export default function QuestionsPanel({
                 </div>
               )}
 
-              {evidenceChips(q.evidenceParagraphs)}
+              {openHints[q.id] && evidenceChips(q.evidenceParagraphs)}
 
               {isGraded && (
                 <div className="mt-4 space-y-3">
