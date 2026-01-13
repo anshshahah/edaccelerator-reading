@@ -6,10 +6,22 @@ export type Chunk = {
   text: string;
 };
 
+
 export type PassageData = {
   id: string;
   title: string;
   paragraphs: string[];
+};
+
+export type ThematicChunk = {
+  id: string;
+  label: string;
+  startPara: number;
+  endPara: number;
+};
+
+export type ThematicChunkPlan = {
+  chunks: ThematicChunk[];
 };
 
 export type QuestionType =
